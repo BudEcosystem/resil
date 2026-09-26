@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --features redis-0-31 -- -D warnings
+      - run: cargo clippy --all-targets --features redis-0-27 -- -D warnings
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all-targets --features redis-0-27,redis-0-31
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports: ["6390:6379"]
+    env:
+      RESIL_TEST_REDIS_URL: redis://127.0.0.1:6390
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --release --features redis-0-31
+      - run: cargo run --release --example bench -- resil

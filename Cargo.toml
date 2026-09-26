@@ -1,0 +1,45 @@
+[package]
+name = "resil"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "Apache-2.0"
+description = "Traffic policy for Bud's gateways: a local-first, Redis-synced rate and concurrency limiter, plus retry, circuit breaking and fallback"
+repository = "https://github.com/BudEcosystem/resil"
+readme = "README.md"
+publish = false
+
+[features]
+default = []
+# Ready-made `RedisExec` adapters for the `redis` crate version each gateway already links, so a
+# gateway never compiles a second copy of `redis` just for this crate.
+redis-0-27 = ["dep:redis027"]
+redis-0-31 = ["dep:redis031"]
+
+[dependencies]
+arc-swap = "1.7"
+dashmap = "6.1"
+fastrand = "2.3"
+foldhash = "0.1"
+http = "1"
+metrics = "0.24"
+papaya = "0.2"
+quanta = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.40", features = ["rt", "sync", "time", "macros"] }
+tracing = "0.1"
+
+redis027 = { package = "redis", version = "0.27", optional = true, default-features = false, features = ["aio", "tokio-comp", "connection-manager", "script"] }
+redis031 = { package = "redis", version = "0.31", optional = true, default-features = false, features = ["aio", "tokio-comp", "connection-manager", "script"] }
+
+[dev-dependencies]
+governor = "=0.6.3"
+moka = { version = "=0.12.10", features = ["future"] }
+tokio = { version = "1.40", features = ["full", "test-util"] }
+
+[profile.bench]
+debug = false
+
+[package.metadata.docs.rs]
+all-features = true
