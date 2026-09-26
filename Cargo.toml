@@ -35,6 +35,7 @@ redis031 = { package = "redis", version = "0.31", optional = true, default-featu
 
 [dev-dependencies]
 governor = "=0.6.3"
+metrics-util = { version = "0.19", default-features = false, features = ["debugging"] }
 moka = { version = "=0.12.10", features = ["future"] }
 tokio = { version = "1.40", features = ["full", "test-util"] }
 

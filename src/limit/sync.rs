@@ -43,11 +43,22 @@ pub(crate) async fn run(inner: Arc<Inner>) {
             inner.stats.export(inner.service);
             metrics::gauge!("resil_replicas", "svc" => inner.service)
                 .set(f64::from(inner.replicas.load(Relaxed)));
+            inner.export_active();
         }
     }
 }
 
 impl Inner {
+    /// `resil_active{svc,key}`: concurrency slots this replica holds per capped key.
+    pub(crate) fn export_active(&self) {
+        for (subject, key) in self.keys.pin().iter() {
+            if let Some(c) = &key.conc {
+                metrics::gauge!("resil_active", "svc" => self.service, "key" => subject.to_string())
+                    .set(c.active() as f64);
+            }
+        }
+    }
+
     /// The next second boundary in store time and how long until the snapshot before it.
     fn next_boundary(&self) -> (f64, Duration) {
         let now = self.clock.mono_ms();
@@ -323,4 +334,57 @@ impl Inner {
 
 fn claim(flag: &std::sync::atomic::AtomicBool) -> bool {
     flag.compare_exchange(false, true, Relaxed, Relaxed).is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::limit::{Limiter, LimiterOptions};
+    use crate::RateLimitConfig;
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+    /// The exported series exist with their labels: decisions per outcome/mode, and the
+    /// per-key active concurrency gauge (FRD-022 Phase 1 metrics).
+    #[tokio::test]
+    async fn exports_decisions_and_active_slots() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let limiter = Limiter::new(
+            LimiterOptions {
+                service: "metrics-test".into(),
+                ..Default::default()
+            },
+            None,
+        );
+        let local = RateLimitConfig {
+            requests_per_minute: Some(1),
+            local_allowance: 1.0,
+            ..Default::default()
+        };
+        limiter.set_policy("dep", Some(&local), Some(3));
+        let _ = limiter.check("dep").await;
+        let _ = limiter.check("dep").await;
+        let _slot = limiter.acquire("dep").await.unwrap();
+        metrics::with_local_recorder(&recorder, || {
+            limiter.inner.stats.export(limiter.inner.service);
+            limiter.inner.export_active();
+        });
+        let snap = snapshotter.snapshot().into_vec();
+        let find = |name: &str, label: (&str, &str)| {
+            snap.iter().find(|(k, _, _, _)| {
+                k.key().name() == name
+                    && k.key()
+                        .labels()
+                        .any(|l| l.key() == label.0 && l.value() == label.1)
+            })
+        };
+        let allow = find("resil_decisions_total", ("outcome", "allow")).expect("allow series");
+        let deny = find("resil_decisions_total", ("outcome", "deny")).expect("deny series");
+        let total = |v: &DebugValue| match v {
+            DebugValue::Counter(c) => *c,
+            _ => 0,
+        };
+        assert!(total(&allow.3) >= 1 && total(&deny.3) >= 1);
+        let active = find("resil_active", ("key", "dep")).expect("active gauge");
+        assert!(matches!(active.3, DebugValue::Gauge(g) if g.into_inner() == 1.0));
+    }
 }
