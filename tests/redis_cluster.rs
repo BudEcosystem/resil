@@ -187,7 +187,7 @@ impl Store for Slow {
     }
 }
 
-// TC-LF-08: Redis slower than redis_timeout_ms → nobody waits longer than the timeout.
+// Redis slower than redis_timeout_ms → nobody waits longer than the timeout.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn slow_store_never_blocks_past_the_timeout() {
     let svc = format!("slow{}", fastrand::u32(..));
@@ -235,12 +235,12 @@ async fn concurrency_cap_is_cluster_wide() {
         return;
     };
     for r in &reps {
-        r.set_policy("voice", None, Some(5));
+        r.set_policy("session", None, Some(5));
     }
     let mut held = Vec::new();
     let mut denied = 0;
     for i in 0..30 {
-        match reps[i % 3].acquire("voice").await {
+        match reps[i % 3].acquire("session").await {
             Ok(Some(g)) => held.push(g),
             Ok(None) => panic!("cap missing"),
             Err(_) => denied += 1,
@@ -252,6 +252,6 @@ async fn concurrency_cap_is_cluster_wide() {
     assert!(held.len() >= 4, "only {} of 5 slots usable", held.len());
     held.clear();
     tokio::time::sleep(Duration::from_millis(1_500)).await;
-    let g = reps[1].acquire("voice").await;
+    let g = reps[1].acquire("session").await;
     assert!(matches!(g, Ok(Some(_))), "released slots come back");
 }

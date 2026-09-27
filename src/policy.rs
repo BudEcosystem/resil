@@ -1,8 +1,8 @@
-//! The deployment-settings contract: what budapp publishes into `model_table:{id}` (budgateway) and
-//! `voice_table:{id}` (WaaV), parsed identically by both gateways.
+//! A per-target traffic policy as data: rate limits, a concurrency cap, retry and fallbacks.
 //!
-//! Field names and defaults match budgateway's historical `RateLimitConfig`, so existing
-//! `model_table` entries and TOML `[models.X.rate_limits]` blocks keep loading unchanged.
+//! Plain serde types, so the same policy can come from JSON published by a control plane or from
+//! a TOML config file, and every service that reads it parses it the same way. Parsing is lenient
+//! where it matters (see [`DeploymentPolicy::from_json_lenient`]).
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -34,7 +34,7 @@ impl From<RateLimitAlgorithm> for Algorithm {
     }
 }
 
-/// Per-deployment rate limits (`rate_limits` in `model_table` / `voice_table`).
+/// Rate limits for one target (the `rate_limits` block).
 ///
 /// No `deny_unknown_fields`: older and newer publishers may carry keys this version does not know.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -46,7 +46,7 @@ pub struct RateLimitConfig {
     pub requests_per_hour: Option<u32>,
     /// Bucket depth for `token_bucket`; ignored by the other algorithms.
     pub burst_size: Option<u32>,
-    /// `false` turns every limit off (budadmin's toggle saves the values with `enabled: false`).
+    /// `false` turns every limit off while keeping the values (an off switch that remembers).
     #[serde(default = "default_enabled")]
     pub enabled: bool,
     /// Longest a store-backed view may be relied on while the store is failing, before the
@@ -117,8 +117,7 @@ impl RateLimitConfig {
         self.local_allowance >= 1.0
     }
 
-    /// The configured windows, shortest first. A zero limit disables its window, as budgateway's
-    /// governor did (`NonZeroU32::new(0)` → no limiter).
+    /// The configured windows, shortest first. A zero limit disables its window.
     pub fn windows(&self) -> Vec<WindowSpec> {
         let burst = match self.algorithm {
             RateLimitAlgorithm::TokenBucket => self.burst_size.filter(|b| *b > 0),
@@ -153,8 +152,8 @@ impl RateLimitConfig {
             .map(|w| (w.limit as u32, Duration::from_millis(w.window_ms)))
     }
 
-    /// Merge with `other` taking precedence (budgateway's historical semantics: tuning fields are
-    /// taken from `other` only when they differ from the default).
+    /// Merge with `other` taking precedence: limits come from `other` when set, and tuning fields
+    /// are taken from `other` only when they differ from the default.
     pub fn merge(self, other: Self) -> Self {
         Self {
             algorithm: other.algorithm,
@@ -201,7 +200,7 @@ impl RateLimitConfig {
     }
 }
 
-/// Retry policy (`retry_config`): budgateway's `RetryConfig` shape.
+/// Retry policy (the `retry_config` block).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct RetryConfig {
     pub num_retries: usize,
@@ -226,12 +225,12 @@ pub struct DeploymentPolicy {
     pub fallback_models: Vec<Arc<str>>,
 }
 
-/// At most this many fallbacks per deployment (budapp's validation, budgateway's historical cap).
+/// At most this many fallbacks per target.
 pub const MAX_FALLBACKS: usize = 5;
 
 impl DeploymentPolicy {
-    /// Parse the policy blocks from a `voice_table` / `model_table` JSON object **leniently**: a
-    /// malformed block is dropped with a warning and never takes the endpoint (or the other blocks)
+    /// Parse the policy blocks from a JSON object **leniently**: a malformed block is dropped with
+    /// a warning and never takes the record that carries it (or the other blocks)
     /// down with it. Returns the policy and the warnings.
     pub fn from_json_lenient(obj: &Value) -> (Self, Vec<String>) {
         let mut warnings = Vec::new();
@@ -303,7 +302,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn defaults_match_budgateway() {
+    fn defaults_are_stable() {
         let c = RateLimitConfig::default();
         assert_eq!(c.algorithm, RateLimitAlgorithm::SlidingWindow);
         assert!(c.enabled);
@@ -314,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_what_budapp_publishes() {
+    fn parses_a_published_policy() {
         let c: RateLimitConfig = serde_json::from_value(json!({
             "algorithm": "token_bucket", "requests_per_second": 10, "requests_per_minute": null,
             "requests_per_hour": 5000, "burst_size": 15, "enabled": true, "cache_ttl_ms": 500,
@@ -388,7 +387,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_keeps_budgateway_semantics() {
+    fn merge_takes_the_override_where_set() {
         let base = RateLimitConfig {
             requests_per_minute: Some(60),
             cache_ttl_ms: 300,

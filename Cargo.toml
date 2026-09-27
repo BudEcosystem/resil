@@ -4,15 +4,17 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
 license = "Apache-2.0"
-description = "Traffic policy for Bud's gateways: a local-first, Redis-synced rate and concurrency limiter, plus retry, circuit breaking and fallback"
+description = "Local-first, Redis-synced rate and concurrency limiting for replicated services, plus failure classification, retry, circuit breaking and fallback"
+keywords = ["rate-limit", "redis", "circuit-breaker", "retry", "gateway"]
+categories = ["network-programming", "web-programming", "asynchronous"]
 repository = "https://github.com/BudEcosystem/resil"
 readme = "README.md"
 publish = false
 
 [features]
 default = []
-# Ready-made `RedisExec` adapters for the `redis` crate version each gateway already links, so a
-# gateway never compiles a second copy of `redis` just for this crate.
+# Ready-made `RedisExec` adapters for the `redis` crate version a service already links, so it
+# never compiles a second copy of `redis` just for this crate.
 redis-0-27 = ["dep:redis027"]
 redis-0-31 = ["dep:redis031"]
 

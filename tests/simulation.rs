@@ -1,4 +1,4 @@
-//! TEST_CASES §2 (TC-LF-*): N limiter replicas sharing the reference store, on a virtual clock.
+//! N limiter replicas sharing the reference store, on a virtual clock.
 //! The store round-trip is instantaneous here; `tests/redis_cluster.rs` repeats the key
 //! properties against a real Redis in real time.
 
@@ -131,7 +131,7 @@ fn per_window(arr: &[Arrival], window_ms: f64) -> Vec<(u64, u64)> {
     m.into_values().collect()
 }
 
-// TC-LF-01: per-window admits ≤ L for N ∈ {1, 2, 4, 8} at 0.5×…50× the limit.
+// per-window admits ≤ L for N ∈ {1, 2, 4, 8} at 0.5×…50× the limit.
 #[tokio::test]
 async fn tc_lf_01_never_exceeds_limit() {
     for alg in [
@@ -154,7 +154,7 @@ async fn tc_lf_01_never_exceeds_limit() {
     }
 }
 
-// TC-LF-01 for the token bucket: any interval τ admits ≤ b + τ/T.
+// For the token bucket: any interval τ admits ≤ b + τ/T.
 #[tokio::test]
 async fn tc_lf_01_token_bucket_envelope() {
     for n in [1usize, 4] {
@@ -177,7 +177,7 @@ async fn tc_lf_01_token_bucket_envelope() {
     }
 }
 
-// TC-LF-02: at 5× the limit, admits ≥ 0.95·L per window (no starvation from the shares).
+// at 5× the limit, admits ≥ 0.95·L per window (no starvation from the shares).
 #[tokio::test]
 async fn tc_lf_02_no_starvation() {
     for alg in [
@@ -199,7 +199,7 @@ async fn tc_lf_02_no_starvation() {
     }
 }
 
-// TC-LF-03: all load on one replica of 4 still reaches ≥ 0.9·L per window.
+// all load on one replica of 4 still reaches ≥ 0.9·L per window.
 #[tokio::test]
 async fn tc_lf_03_skewed_traffic() {
     let c = Cluster::new(4).await;
@@ -212,7 +212,7 @@ async fn tc_lf_03_skewed_traffic() {
     }
 }
 
-// TC-LF-04: token bucket long-run rate within 1 % of L; a burst of b admitted from idle.
+// token bucket long-run rate within 1 % of L; a burst of b admitted from idle.
 #[tokio::test]
 async fn tc_lf_04_token_bucket_rate_and_burst() {
     let c = Cluster::new(2).await;
@@ -238,7 +238,7 @@ async fn tc_lf_04_token_bucket_rate_and_burst() {
     );
 }
 
-// TC-LF-06: a retry at exactly Retry-After is admitted in ≥ 99 % of cases.
+// a retry at exactly Retry-After is admitted in ≥ 99 % of cases.
 #[tokio::test]
 async fn tc_lf_06_retry_after_never_undershoots() {
     for alg in [
@@ -283,7 +283,7 @@ async fn tc_lf_06_retry_after_never_undershoots() {
     }
 }
 
-// TC-LF-07: store down → each replica enforces ⌈L/N⌉; cluster total within L ± N.
+// store down → each replica enforces ⌈L/N⌉; cluster total within L ± N.
 #[tokio::test]
 async fn tc_lf_07_store_down_fail_static() {
     let c = Cluster::new(4).await;
@@ -306,7 +306,7 @@ async fn tc_lf_07_store_down_fail_static() {
     assert!(c.reps[0].outcome_count(Outcome::AllowDegraded) > 0);
 }
 
-// TC-LF-09: a cold key on 4 replicas at once: first-interval admits ≤ L.
+// a cold key on 4 replicas at once: first-interval admits ≤ L.
 #[tokio::test]
 async fn tc_lf_09_cold_start() {
     for limit in [8u32, 40, 400] {
@@ -323,7 +323,7 @@ async fn tc_lf_09_cold_start() {
     }
 }
 
-// TC-LF-10: a config change starts from fresh state.
+// a config change starts from fresh state.
 #[tokio::test]
 async fn tc_lf_10_config_change_resets() {
     let c = Cluster::new(1).await;
@@ -346,7 +346,7 @@ async fn tc_lf_10_config_change_resets() {
     assert!(!c.reps[0].check(SUBJECT).await.is_allowed());
 }
 
-// TC-LF-11: a replica dies holding slots; the others regain them within the lease TTL.
+// a replica dies holding slots; the others regain them within the lease TTL.
 #[tokio::test]
 async fn tc_lf_11_concurrency_lease_expiry() {
     let mut c = Cluster::new(2).await;
@@ -382,7 +382,7 @@ async fn tc_lf_11_concurrency_lease_expiry() {
     assert!(after <= 6_000.0, "regained after {after} ms");
 }
 
-// TC-LF-13: last-mile — 3 rps on 4 replicas → ≤ 3 admits per second cluster-wide.
+// last-mile — 3 rps on 4 replicas → ≤ 3 admits per second cluster-wide.
 #[tokio::test]
 async fn tc_lf_13_last_mile() {
     let c = Cluster::new(4).await;
@@ -397,7 +397,7 @@ async fn tc_lf_13_last_mile() {
     }
 }
 
-// TC-LF-15: at 0.9× the limit, < 1 % of requests wait on the store.
+// at 0.9× the limit, < 1 % of requests wait on the store.
 #[tokio::test]
 async fn tc_lf_15_early_sync_keeps_waits_rare() {
     let c = Cluster::new(4).await;
@@ -414,7 +414,7 @@ async fn tc_lf_15_early_sync_keeps_waits_rare() {
     assert!(waited * 100 < total, "{waited} of {total} requests waited");
 }
 
-// TC-LF-16: hits admitted during an outage are pushed and paid back.
+// hits admitted during an outage are pushed and paid back.
 #[tokio::test]
 async fn tc_lf_16_outage_payback() {
     let c = Cluster::new(2).await;
@@ -448,7 +448,7 @@ async fn tc_lf_16_outage_payback() {
     assert!(during + after <= 104, "{during} + {after} > L + N");
 }
 
-// TC-PA-03: disabled limits → unlimited, no headers.
+// disabled limits → unlimited, no headers.
 #[tokio::test]
 async fn tc_pa_03_disabled_is_unlimited() {
     let c = Cluster::new(1).await;
@@ -461,7 +461,7 @@ async fn tc_pa_03_disabled_is_unlimited() {
     assert_eq!(c.reps[0].check("unknown").await, Decision::Unlimited);
 }
 
-// TC-PA-09: a key at 10 % of its limit syncs ≤ 1× per second per replica.
+// a key at 10 % of its limit syncs ≤ 1× per second per replica.
 #[tokio::test]
 async fn tc_pa_09_adaptive_sync() {
     let c = Cluster::new(2).await;
