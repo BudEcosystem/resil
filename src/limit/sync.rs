@@ -343,7 +343,7 @@ mod tests {
     use metrics_util::debugging::{DebugValue, DebuggingRecorder};
 
     /// The exported series exist with their labels: decisions per outcome/mode, and the
-    /// per-key active concurrency gauge (FRD-022 Phase 1 metrics).
+    /// per-key active concurrency gauge.
     #[tokio::test]
     async fn exports_decisions_and_active_slots() {
         let recorder = DebuggingRecorder::new();

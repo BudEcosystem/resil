@@ -1,12 +1,12 @@
-//! Keyed circuit breakers, in two tiers (FRD §6.5):
+//! Keyed circuit breakers, in two tiers:
 //!
 //! | Tier | Key | Opens on |
 //! |---|---|---|
-//! | deployment | endpoint id | its credential/quota errors (401/402/403, 429) and 5xx/timeouts |
-//! | vendor | vendor + API host | 5xx/timeouts/connect errors from ≥ 2 distinct deployments |
+//! | deployment | target id | its credential/quota errors (401/402/403, 429) and 5xx/timeouts |
+//! | vendor | provider + API host | 5xx/timeouts/connect errors from ≥ 2 distinct targets |
 //!
-//! One tenant's bad key opens only its own deployment's breaker; a vendor outage opens the vendor
-//! tier, which every deployment on that vendor consults, so they fail over without each paying the
+//! One tenant's bad key opens only its own target's breaker; a provider outage opens the vendor
+//! tier, which every target on that provider consults, so they fail over without each paying the
 //! failure volume first.
 
 use std::collections::VecDeque;
@@ -349,7 +349,6 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn tenant_isolation_one_bad_key_opens_only_its_deployment() {
-        // TC-WR-09
         let t = TwoTier::default();
         for _ in 0..10 {
             t.record_failure("tenant-a", "elevenlabs", &v(401));
@@ -360,7 +359,6 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn vendor_tier_needs_two_deployments() {
-        // TC-WR-13
         let t = TwoTier::default();
         for _ in 0..10 {
             t.record_failure("a", "deepgram", &v(503));
@@ -389,7 +387,6 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn retry_after_429_opens_for_exactly_that_long() {
-        // TC-WR-14
         let t = TwoTier::default();
         let mut h = http::HeaderMap::new();
         h.insert("retry-after", http::HeaderValue::from_static("20"));

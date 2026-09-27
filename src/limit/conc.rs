@@ -1,4 +1,4 @@
-//! Concurrency caps (`max_concurrent`, FRD §5.8): the same credit scheme applied to a count. Each
+//! Concurrency caps (`max_concurrent`): the same credit scheme applied to a count. Each
 //! replica publishes its absolute count plus a small reservation; the sum over live replicas never
 //! exceeds the cap while the store is healthy, and a crashed replica's slots expire with its lease.
 

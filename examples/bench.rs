@@ -1,6 +1,6 @@
-//! TC-LF-12: hot-path cost of `resil::Limiter::check` against budgateway's current limiter
-//! (reproduced with its crate versions: governor 0.6.3, moka 0.12.10, dashmap 6.1) and against a
-//! pure governor. Limits are set high enough that everything is admitted: this measures the admit
+//! Hot-path cost of `resil::Limiter::check` against a common cached-counter design (a per-replica
+//! governor plus a Redis count cached for 200 ms, most decisions local — reproduced with governor
+//! 0.6.3, moka 0.12.10, dashmap 6.1) and against a pure per-replica governor. Limits are set high enough that everything is admitted: this measures the admit
 //! path, which is what nearly every request pays.
 //!
 //! `cargo run --release --example bench -- [today8|gov|resil]` — one variant per process, so one
@@ -20,7 +20,7 @@ const HUGE: u32 = 2_000_000_000;
 const ITERS: u64 = 400_000;
 type Gov = RateLimiter<NotKeyed, InMemoryState, QuantaClock>;
 
-// ---- today's budgateway limiter (rate_limit/limiter.rs:346-574), the local_allowance < 1 path
+// ---- the cached-counter limiter, its local_allowance < 1 path
 #[derive(Clone)]
 struct Cached {
     remaining: u32,
@@ -131,8 +131,7 @@ async fn main() {
             .map(|i| format!("0b6e1c52-4f1e-4d7e-9a1b-{i:012}"))
             .collect(),
     );
-    let api: Arc<Vec<String>> =
-        Arc::new((0..50).map(|i| format!("bud_client_key_{i:040}")).collect());
+    let api: Arc<Vec<String>> = Arc::new((0..50).map(|i| format!("client_key_{i:040}")).collect());
     let workers = std::thread::available_parallelism().unwrap().get();
 
     // resil: store in-process (MemStore) behind the background sync task, like Redis would be.
@@ -209,11 +208,7 @@ async fn main() {
             tokio::time::sleep(Duration::from_millis(300)).await;
         }
         for (label, which, name) in [
-            (
-                "today, local_allowance 0.8 (what budapp publishes)",
-                0,
-                "today8",
-            ),
+            ("cached counter, local_allowance 0.8", 0, "today8"),
             (
                 "today, local_allowance 1.0 (pure governor, per pod)",
                 1,

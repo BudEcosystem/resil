@@ -1,4 +1,4 @@
-//! What a failed call means (FRD §6.3–6.5): retry it, fail over, count it against a breaker, or
+//! What a failed upstream call means: retry it, fail over, count it against a breaker, or
 //! surface it as the caller's own mistake.
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

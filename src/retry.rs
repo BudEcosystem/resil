@@ -1,7 +1,8 @@
-//! Retry with classification, vendor delay hints and a deadline (FRD §6.3).
+//! Retry with classification, provider delay hints and a deadline.
 //!
-//! Two backoff profiles: budgateway's (1 s base, doubling, additive jitter — its historical
-//! numbers) and WaaV's (250 ms base, full jitter — a voice turn cannot absorb a one-second floor).
+//! Two backoff profiles: [`Backoff::standard`] (1 s base, doubling, additive jitter) for work that
+//! can absorb a one-second floor, and [`Backoff::interactive`] (250 ms base, full jitter) for
+//! latency-sensitive calls a user is waiting on, such as a live voice turn.
 
 use std::future::Future;
 use std::time::Duration;
@@ -29,8 +30,8 @@ pub struct Backoff {
 }
 
 impl Backoff {
-    /// budgateway: exponential from 1 s, doubling, jitter, capped at `max_delay_s`.
-    pub fn budgateway(max_delay_s: f32) -> Self {
+    /// Exponential from 1 s, doubling, additive jitter, capped at `max_delay_s`.
+    pub fn standard(max_delay_s: f32) -> Self {
         Self {
             base: Duration::from_secs(1),
             factor: 2.0,
@@ -39,8 +40,9 @@ impl Backoff {
         }
     }
 
-    /// WaaV: exponential from `min(250 ms, max_delay_s)`, doubling, full jitter.
-    pub fn waav(max_delay_s: f32) -> Self {
+    /// Exponential from `min(250 ms, max_delay_s)`, doubling, full jitter: for calls a user is
+    /// waiting on.
+    pub fn interactive(max_delay_s: f32) -> Self {
         let max = secs(max_delay_s);
         Self {
             base: Duration::from_millis(250).min(max),
@@ -82,19 +84,21 @@ impl RetryPolicy {
     pub fn none() -> Self {
         Self {
             max_retries: 0,
-            backoff: Backoff::waav(0.0),
+            backoff: Backoff::interactive(0.0),
         }
     }
-    pub fn waav(c: &RetryConfig) -> Self {
+    /// `c`'s retries (at most 10) with the [`Backoff::interactive`] profile.
+    pub fn interactive(c: &RetryConfig) -> Self {
         Self {
             max_retries: c.num_retries.min(10) as u32,
-            backoff: Backoff::waav(c.max_delay_s),
+            backoff: Backoff::interactive(c.max_delay_s),
         }
     }
-    pub fn budgateway(c: &RetryConfig) -> Self {
+    /// `c`'s retries (at most 10) with the [`Backoff::standard`] profile.
+    pub fn standard(c: &RetryConfig) -> Self {
         Self {
             max_retries: c.num_retries.min(10) as u32,
-            backoff: Backoff::budgateway(c.max_delay_s),
+            backoff: Backoff::standard(c.max_delay_s),
         }
     }
 }
@@ -176,8 +180,8 @@ mod tests {
     }
 
     #[test]
-    fn budgateway_profile_keeps_its_numbers() {
-        let b = Backoff::budgateway(10.0);
+    fn standard_profile_starts_at_one_second() {
+        let b = Backoff::standard(10.0);
         for (i, lo) in [(0u32, 1.0), (1, 2.0), (2, 4.0)] {
             let d = b.delay(i).as_secs_f64();
             assert!(d >= lo && d <= (lo * 2.0).min(10.0), "retry {i}: {d}");
@@ -186,19 +190,19 @@ mod tests {
     }
 
     #[test]
-    fn waav_profile_starts_at_250ms_with_full_jitter() {
-        let b = Backoff::waav(5.0);
+    fn interactive_profile_starts_at_250ms_with_full_jitter() {
+        let b = Backoff::interactive(5.0);
         for _ in 0..100 {
             assert!(b.delay(0) <= Duration::from_millis(250));
             assert!(b.delay(20) <= Duration::from_secs(5));
         }
-        assert_eq!(Backoff::waav(0.1).base, Duration::from_millis(100));
+        assert_eq!(Backoff::interactive(0.1).base, Duration::from_millis(100));
     }
 
     #[tokio::test(start_paused = true)]
     async fn retries_transient_errors_then_succeeds() {
         let calls = AtomicU32::new(0);
-        let p = RetryPolicy::waav(&RetryConfig {
+        let p = RetryPolicy::interactive(&RetryConfig {
             num_retries: 2,
             max_delay_s: 5.0,
         });
@@ -223,7 +227,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn caller_errors_are_not_retried() {
         let calls = AtomicU32::new(0);
-        let p = RetryPolicy::waav(&RetryConfig {
+        let p = RetryPolicy::interactive(&RetryConfig {
             num_retries: 5,
             max_delay_s: 5.0,
         });
@@ -244,7 +248,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn honours_retry_after_within_the_deadline() {
-        let p = RetryPolicy::waav(&RetryConfig {
+        let p = RetryPolicy::interactive(&RetryConfig {
             num_retries: 3,
             max_delay_s: 5.0,
         });

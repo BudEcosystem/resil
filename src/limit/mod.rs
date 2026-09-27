@@ -1,4 +1,4 @@
-//! Local-first distributed rate and concurrency limiting (FRD-022 §5).
+//! Local-first distributed rate and concurrency limiting.
 //!
 //! Every replica decides locally from **credit**: a reservation of the shared budget granted by the
 //! store at the last sync. Admission is an atomic add and a compare — no I/O. A background task
@@ -56,7 +56,7 @@ pub enum LastMile {
 
 #[derive(Debug, Clone)]
 pub struct LimiterOptions {
-    /// Namespace for store keys and metric labels (`budgateway`, `waav`).
+    /// Namespace for store keys and metric labels: one per replica set (e.g. `my-gateway`).
     pub service: String,
     /// Unique replica id. Defaults to `$HOSTNAME` plus a random suffix.
     pub pod_id: Option<String>,
@@ -93,7 +93,7 @@ impl Default for LimiterOptions {
     }
 }
 
-/// Rate-limit headers (FRD §5.9).
+/// Rate-limit headers (`X-RateLimit-*`, `Retry-After`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RateHeaders {
     /// Limit of the most restrictive window.
@@ -253,7 +253,7 @@ impl Limiter {
     }
 
     /// Install or replace a subject's policy. An unchanged configuration keeps its live state
-    /// (budgateway republishes the whole model table periodically).
+    /// (callers may re-apply their whole policy table periodically).
     pub fn set_policy(
         &self,
         subject: &str,
@@ -322,7 +322,7 @@ impl Limiter {
         self.inner.keys.len() == 0
     }
 
-    /// Decide one request. Completes without I/O unless the replica's credit is spent (FRD §5.5).
+    /// Decide one request. Completes without I/O unless the replica's credit is spent.
     pub async fn check(&self, subject: &str) -> Decision {
         let now = self.inner.clock.mono_ms();
         let rate = {

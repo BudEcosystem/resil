@@ -1,9 +1,10 @@
-//! Fallback chains (FRD §6.4 / §7): an ordered list of deployments, tried until one serves the
-//! request, with cycle detection, per-hop admission and one shared deadline.
+//! Fallback chains: an ordered list of targets, tried until one serves the request, with cycle
+//! detection, per-hop admission and one shared deadline.
 //!
-//! The trigger predicate belongs to the gateway: budgateway falls back on **any** error (a
-//! context-length 400 is exactly what a larger fallback model fixes); WaaV falls back only on
-//! failover-eligible errors ([`crate::classify::Verdict::failover`]).
+//! The trigger predicate belongs to the caller. An LLM gateway may fall back on **any** error (a
+//! context-length 400 is exactly what a larger fallback model fixes); a service whose fallbacks
+//! behave like the primary should fall back only on failover-eligible errors
+//! ([`crate::classify::Verdict::failover`]).
 
 use std::collections::HashSet;
 use std::future::Future;
@@ -15,7 +16,7 @@ use tokio::time::Instant;
 use crate::policy::MAX_FALLBACKS;
 
 /// Expand `primary` and its fallbacks depth-first — a fallback's own fallbacks are tried before
-/// the next sibling, as budgateway does — skipping anything already visited (A → B → A stops at
+/// the next sibling — skipping anything already visited (A → B → A stops at
 /// B). At most `max_hops` entries, the primary included.
 pub fn expand<F>(primary: &str, fallbacks_of: F, max_hops: usize) -> Vec<Arc<str>>
 where
@@ -76,7 +77,7 @@ pub enum HopRecord {
 
 #[derive(Debug)]
 pub enum ChainError<E> {
-    /// A hop failed with an error the trigger says must surface (a caller error on WaaV).
+    /// A hop failed with an error the trigger says must surface (e.g. the caller's own mistake).
     Surfaced { endpoint: Arc<str>, error: E },
     /// Every hop failed or was skipped.
     Exhausted {
@@ -204,7 +205,6 @@ mod tests {
 
     #[test]
     fn expands_depth_first_and_cuts_cycles() {
-        // TC-PA-06
         let g = graph(&[("A", &["B", "D"]), ("B", &["C", "A"]), ("C", &["A"])]);
         assert_eq!(names(&expand("A", &g, 10)), ["A", "B", "C", "D"]);
         assert_eq!(names(&expand("A", graph(&[("A", &["A"])]), 10)), ["A"]);
@@ -236,7 +236,7 @@ mod tests {
 
     #[tokio::test]
     async fn caller_error_surfaces_without_fallback() {
-        // TC-WR-02 / TC-PA-04 (WaaV side): a 400 is not failover-eligible.
+        // A 400 is not failover-eligible under the classifying trigger.
         let c: Vec<Arc<str>> = ["a", "b"].into_iter().map(Arc::from).collect();
         let tried = std::sync::atomic::AtomicUsize::new(0);
         let out: ChainOutcome<(), u16> = run(
@@ -258,7 +258,6 @@ mod tests {
 
     #[tokio::test]
     async fn all_rate_limited_reports_the_smallest_wait() {
-        // TC-WR-12
         let c: Vec<Arc<str>> = ["a", "b"].into_iter().map(Arc::from).collect();
         let out: ChainOutcome<(), u16> = run(
             &c,

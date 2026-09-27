@@ -1,4 +1,4 @@
-//! Wire format shared by both gateways (FRD §5.9): the 429 bodies, the `X-RateLimit-*` headers and
+//! Wire format for rate-limited HTTP services: OpenAI-style 429 bodies, the `X-RateLimit-*` headers and
 //! the CORS expose list.
 
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
